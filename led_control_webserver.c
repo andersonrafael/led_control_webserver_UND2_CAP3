@@ -1,4 +1,12 @@
+//****************************************************
+//****************************************************
+//***************** COMNUNICAÇÃO HTTP ****************
+//****************************************************
+//****************************************************
 
+// Autor: Francisco Anderson Rafael da Silva
+// Data: 20/10/2023
+// Projeto: Controle de LEDs via Web Server
 
 /* #include "pico/stdlib.h"
 #include "hardware/adc.h"
@@ -230,8 +238,18 @@ cyw43_arch_deinit();
 return 0;
 }
 
-
 */
+
+
+
+//    ********************************
+//    ********************************
+
+//     UNIDADE 2 CAPITULO 3 - PROJETO SENSOR TEMPERATURA
+
+//    ********************************
+//    ********************************
+
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
@@ -244,11 +262,11 @@ return 0;
 #include "lwip/udp.h"
 
 // --- CONFIGURAÇÕES ---
-// ⚠️ Altere com os dados da sua rede Wi-Fi
+//  rede Wi-Fi
 #define WIFI_SSID "RAFAEL 2G"
 #define WIFI_PASSWORD "cLzV5tyWq1"
 
-// ⚠️ Coloque aqui o IP do computador que vai receber os dados
+//  IP do computador
 #define SERVER_IP "192.168.100.19"
 #define SERVER_PORT 1234 // Porta para comunicação
 #define POLL_TIME_S 1  // Intervalo de envio em segundos
@@ -264,7 +282,6 @@ ip_addr_t server_addr;
 void send_sensor_data()
 {
     // 1. Ler o status do botão
-    // Usamos '!' pois o pino vai para LOW (0) quando pressionado devido ao pull-up
     bool is_button_pressed = !gpio_get(BUTTON_PIN);
 
     // 2. Ler a temperatura interna
@@ -273,7 +290,7 @@ void send_sensor_data()
     const float conversion_factor = 3.3f / (1 << 12);
     float temperature = 27.0f - ((raw_value * conversion_factor) - 0.706f) / 0.001721f;
 
-    // 3. Criar o pacote de dados (payload) em formato JSON
+    // 3. Cria pacote de dados (payload) em formato JSON
     char payload[128];
     snprintf(payload, sizeof(payload),
              "{\"botao_pressionado\": %s, \"temperatura_c\": %.2f}",
@@ -357,3 +374,152 @@ int main()
     cyw43_arch_deinit();
     return 0;
 }
+
+
+
+//****************************************************
+//****************************************************
+//    UNIDADE 2 CAPITULO  - JOYSTICK CONTROLLER
+//****************************************************
+//****************************************************
+// Autor: Francisco Anderson Rafael da Silva
+
+/*
+#include "pico/stdlib.h"
+#include "pico/cyw43_arch.h"
+#include "hardware/adc.h"
+#include <stdio.h>
+#include <string.h>
+
+#include "lwip/pbuf.h"
+#include "lwip/udp.h"
+
+// --- CONFIGURAÇÕES ---
+//  rede Wi-Fi
+#define WIFI_SSID "RAFAEL 2G"
+#define WIFI_PASSWORD "cLzV5tyWq1"
+
+//  IP do computador
+#define SERVER_IP "192.168.100.19"
+#define SERVER_PORT 12345
+#define POLL_TIME_MS 200 // Intervalo de envio em milissegundos (5x por segundo)
+
+// --- PINOS DO HARDWARE ---
+#define JOYSTICK_X_PIN 26 // ADC0 para o eixo X
+#define JOYSTICK_Y_PIN 27 // ADC1 para o eixo Y
+
+// Variáveis globais para o UDP
+static struct udp_pcb *udp_pcb;
+ip_addr_t server_addr;
+
+// ⭐ FUNÇÃO DO DESAFIO: Converte a posição X/Y em uma direção da Rosa dos Ventos
+const char *get_compass_direction(uint16_t x, uint16_t y)
+{
+    // O ADC de 12 bits vai de 0 a 4095. O centro é ~2048.
+    // Criamos uma "zona morta" para o joystick em repouso.
+    const int threshold = 500;
+    const int center = 2048;
+    const int low_limit = center - threshold;
+    const int high_limit = center + threshold;
+
+    bool north = y > high_limit;
+    bool south = y < low_limit;
+    bool east = x > high_limit;
+    bool west = x < low_limit;
+
+    if (north && east)
+        return "Nordeste";
+    if (north && west)
+        return "Noroeste";
+    if (south && east)
+        return "Sudeste";
+    if (south && west)
+        return "Sudoeste";
+    if (north)
+        return "Norte";
+    if (south)
+        return "Sul";
+    if (east)
+        return "Leste";
+    if (west)
+        return "Oeste";
+
+    return "Centro";
+}
+
+// Função para enviar os dados via UDP
+void send_joystick_data()
+{
+    // 1. Ler os valores analógicos do Joystick
+    adc_select_input(0); // Seleciona ADC0 (GP26)
+    uint16_t raw_x = adc_read();
+
+    adc_select_input(1); // Seleciona ADC1 (GP27)
+    uint16_t raw_y = adc_read();
+
+    // 2. Obter a direção da rosa dos ventos
+    const char *direction = get_compass_direction(raw_x, raw_y);
+
+    // 3. Criar o pacote de dados (payload) em formato JSON
+    char payload[128];
+    snprintf(payload, sizeof(payload),
+             "{\"x\": %d, \"y\": %d, \"direcao\": \"%s\"}",
+             raw_x, raw_y, direction);
+
+    // 4. Enviar o pacote via UDP
+    struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, strlen(payload), PBUF_RAM);
+    if (p != NULL)
+    {
+        memcpy(p->payload, payload, strlen(payload));
+        udp_sendto(udp_pcb, p, &server_addr, SERVER_PORT);
+        pbuf_free(p);
+        printf("Enviado: %s\n", payload);
+    }
+}
+
+int main()
+{
+    stdio_init_all();
+
+    // Inicializa o ADC
+    adc_init();
+    adc_gpio_init(JOYSTICK_X_PIN);
+    adc_gpio_init(JOYSTICK_Y_PIN);
+
+    // Conecta ao Wi-Fi
+    if (cyw43_arch_init_with_country(CYW43_COUNTRY_BRAZIL))
+    {
+        printf("Falha ao inicializar Wi-Fi\n");
+        return -1;
+    }
+    cyw43_arch_enable_sta_mode();
+    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 30000))
+    {
+        printf("Falha ao conectar ao Wi-Fi.\n");
+        return -1;
+    }
+    printf("Conectado! IP da Placa: %s\n", ip4addr_ntoa(netif_ip4_addr(netif_default)));
+
+    // Configura o cliente UDP
+    udp_pcb = udp_new();
+    ipaddr_aton(SERVER_IP, &server_addr);
+
+    // Loop principal
+    absolute_time_t next_poll_time = get_absolute_time();
+    while (true)
+    {
+        cyw43_arch_poll(); // Mantém a conexão Wi-Fi ativa
+
+        if (absolute_time_diff_us(get_absolute_time(), next_poll_time) < 0)
+        {
+            send_joystick_data();
+            next_poll_time = make_timeout_time_ms(POLL_TIME_MS);
+        }
+    }
+
+    cyw43_arch_deinit();
+    return 0;
+}
+
+
+*/
